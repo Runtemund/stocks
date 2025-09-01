@@ -38,11 +38,11 @@ class DllExport TradingChart: public nui::Canvas
       //! The main stock to display.
       const Stock* mStock = nullptr;
 
-      //! The first visible date
-      jm::Date mFirst;
+      //! The first visible tick
+      int64 mFirst;
 
-      //! The last visible date
-      jm::Date mLast;
+      //! The last visible tick
+      int64 mLast;
 
       //! The visible span;
       int64 mSpan;

@@ -181,10 +181,9 @@ std::string fetchAppleStockData()
 
 TradingChart::TradingChart()
 {
-   mLast=jm::Date();
-   mFirst=jm::Date();
+   mLast=0;
+   mFirst=0;
    mSpan = 30;
-   mFirst.setDate(mFirst.date()-mSpan);
 
    setOnPaint([this](nui::Painter* painter)
    {
@@ -207,8 +206,7 @@ TradingChart::TradingChart()
       if(mSpan>10000)mSpan=30;
       if(mSpan<10)mSpan=10;
 
-      mFirst=mLast;
-      mFirst.setDate(mFirst.date()-mSpan);
+      mFirst=std::max(mLast-mSpan,int64(0));
       update();
    });
 }
@@ -218,9 +216,8 @@ void TradingChart::setStock(const Stock* stock)
    mStock=stock;
    if(stock->priceHistory.size()>0)
    {
-      mLast=stock->priceHistory[stock->priceHistory.size()-1].date;
-      mFirst=mLast;
-      mFirst.setDate(mFirst.date()-mSpan);
+      mLast=stock->priceHistory.size()-1;
+      mFirst=std::max(mLast-mSpan,int64(0));
    }
 }
 
@@ -263,42 +260,17 @@ void TradingChart::paint(nui::Painter* painter)
    //
    // Note: Data can be incomplete, so the x-axis is time based, but the chart may have gaps
 
-   // Find first and last record index
-   size_t firstRecord=0;
-   size_t lastRecord=mStock->priceHistory.size()-1;
-
-   for(size_t index=0;index<mStock->priceHistory.size();index++)
-   {
-      const PriceRecord& record = mStock->priceHistory[index];
-
-      // we need this kind of comparing in case, mFirst is not present in price history, then use the most smallest
-      if(sameDay(record.date,mFirst) || record.date < mFirst)
-      {
-         firstRecord=index;
-      }
-
-      if(sameDay(record.date, mLast))
-      {
-         lastRecord=index;
-      }
-   }
-
-   jm::DateFormatter df2=jm::DateFormatter("dd.MM.yy");
-
-   std::cout<<"Rec: "<<firstRecord<<" "<<lastRecord<<std::endl;
-   std::cout<<"Dat: "<<df2.format(mFirst)<<" "<<df2.format(mLast)<<std::endl;
-
    //Number of shown days
    size_t days = mSpan+1;
 
    double xScale=chartArea.width()/days;
 
-   double low = mStock->minPrice(firstRecord,lastRecord);
-   double high = mStock->maxPrice(firstRecord,lastRecord);
+   double low = mStock->minPrice(mFirst,mLast);
+   double high = mStock->maxPrice(mFirst,mLast);
    double delta = high-low;
 
    double yScale = (double)chartArea.height()/delta;
-   double volScale = 100.0/(double)mStock->maxVolume(firstRecord,lastRecord);
+   double volScale = 100.0/(double)mStock->maxVolume(mFirst,mLast);
 
 
    //
@@ -318,20 +290,19 @@ void TradingChart::paint(nui::Painter* painter)
    painter->setFillColor(colAxis);
    painter->setStrokeColor(colGrid);
    jm::DateFormatter df=jm::DateFormatter("MMM");
-   jm::Date current = mFirst;
-   size_t index=0;
-   while(current<=mLast)
+   int64 tick=0;
+   for(int64 index=mFirst;index<=mLast;index++)
    {
+      jm::Date current=mStock->priceHistory[index].date;
       if(current.date()==1)// 1st of month
       {
          jm::String label = df.format(current);
          int width = painter->wordWidth(label);
-         painter->drawText(label,jm::Point(chartArea.left()+index*xScale-0.5*width,chartArea.bottom()+5+painter->wordAscent()));
-         painter->line(chartArea.left()+index*xScale,chartArea.bottom(),chartArea.left()+index*xScale,chartArea.top());
+         painter->drawText(label,jm::Point(chartArea.left()+tick*xScale-0.5*width,chartArea.bottom()+5+painter->wordAscent()));
+         painter->line(chartArea.left()+tick*xScale,chartArea.bottom(),chartArea.left()+tick*xScale,chartArea.top());
          painter->stroke();
       }
-      current.setDate(current.date()+1);
-      index++;
+      tick++;
    }
 
    // Draw axis line
@@ -352,93 +323,64 @@ void TradingChart::paint(nui::Painter* painter)
 
    // Draw volume
    painter->setFillColor(colVolumeChart);
-   index=0;
-   current = mFirst;
-   int64 tick=0;
-   while(current<=mLast)
+   tick=0;
+   for(int64 index=mFirst;index<=mLast;index++)
    {
-      while(mStock->priceHistory[index].date < current)index++;
-
       const PriceRecord& record = mStock->priceHistory[index];
 
-      if(sameDay(record.date,current))
-      {
-         jm::Rect rect = jm::Rect(chartArea.left()+tick*xScale-0.2*xScale,
-                                       chartArea.bottom()-record.volume*volScale,
-                                       xScale*0.4,
-                                       record.volume*volScale );
-         painter->rectangle(rect);
-         painter->fill();
-         index++;
-      }
-
-      current.setDate(current.date()+1);
+      jm::Rect rect = jm::Rect(chartArea.left()+tick*xScale-0.2*xScale,
+                                    chartArea.bottom()-record.volume*volScale,
+                                    xScale*0.4,
+                                    record.volume*volScale );
+      painter->rectangle(rect);
+      painter->fill();
       tick++;
    }
 
    // Draw Linechart
    painter->setStrokeColor(colForeground);
-      index=0;
-   current = mFirst;
    tick=0;
    bool first=true;
-   while(current<=mLast)
+   for(int64 index=mFirst;index<=mLast;index++)
    {
-      while(mStock->priceHistory[index].date < current)index++;
-
       const PriceRecord& record = mStock->priceHistory[index];
 
-      if(sameDay(record.date,current))
-      {
-         if(first)painter->moveTo(jm::Point(chartArea.left()+tick*xScale,chartArea.bottom()-(mStock->priceHistory[index].close-low)*yScale));
-         else painter->lineTo(jm::Point(chartArea.left()+tick*xScale,chartArea.bottom()-(mStock->priceHistory[index].close-low)*yScale));
-         first=false;
-      }
+      if(first)painter->moveTo(jm::Point(chartArea.left()+tick*xScale,chartArea.bottom()-(mStock->priceHistory[index].close-low)*yScale));
+      else painter->lineTo(jm::Point(chartArea.left()+tick*xScale,chartArea.bottom()-(mStock->priceHistory[index].close-low)*yScale));
+      first=false;
 
-      current.setDate(current.date()+1);
       tick++;
    }
    painter->stroke();
 
    // Draw candles
-   index=0;
-   current = mFirst;
    tick=0;
-   while(current<=mLast)
+   for(int64 index=mFirst;index<=mLast;index++)
    {
-      while(mStock->priceHistory[index].date < current)index++;
-
       const PriceRecord& record = mStock->priceHistory[index];
 
-      if(sameDay(record.date,current))
+      double candleTop=std::max(record.open,record.close);
+      double candleHeight=std::abs(record.open-record.close);
+
+      if(record.close > record.open)
       {
-         const PriceRecord& record = mStock->priceHistory[index];
-
-         double candleTop=std::max(record.open,record.close);
-         double candleHeight=std::abs(record.open-record.close);
-
-         if(record.close > record.open)
-         {
-            painter->setStrokeColor(colBullishCandle);
-            painter->setFillColor(colBullishCandle);
-         }
-         else
-         {
-            painter->setStrokeColor(colBearishCandle);
-            painter->setFillColor(colBearishCandle);            
-         }
-
-         painter->line(jm::Point(chartArea.left()+tick*xScale,chartArea.bottom()-(record.low-low)*yScale),
-                        jm::Point(chartArea.left()+tick*xScale,chartArea.bottom()-(record.high-low)*yScale));
-         painter->stroke();
-         painter->rectangle(jm::Rect(chartArea.left()+tick*xScale-0.4*xScale,
-                                       chartArea.bottom()-(candleTop-low)*yScale,
-                                       xScale*0.8,
-                                       candleHeight*yScale ));
-         painter->fill();
+         painter->setStrokeColor(colBullishCandle);
+         painter->setFillColor(colBullishCandle);
+      }
+      else
+      {
+         painter->setStrokeColor(colBearishCandle);
+         painter->setFillColor(colBearishCandle);            
       }
 
-      current.setDate(current.date()+1);
+      painter->line(jm::Point(chartArea.left()+tick*xScale,chartArea.bottom()-(record.low-low)*yScale),
+                     jm::Point(chartArea.left()+tick*xScale,chartArea.bottom()-(record.high-low)*yScale));
+      painter->stroke();
+      painter->rectangle(jm::Rect(chartArea.left()+tick*xScale-0.4*xScale,
+                                    chartArea.bottom()-(candleTop-low)*yScale,
+                                    xScale*0.8,
+                                    candleHeight*yScale ));
+      painter->fill();
       tick++;
    }
 
@@ -452,7 +394,7 @@ void TradingChart::paint(nui::Painter* painter)
    // MACD line
    painter->setStrokeColor(jm::Color::fromRgb(255, 165, 0));
    painter->moveTo(jm::Point(chartArea.left()+35*xScale,chartArea.center().y()-(macdData[0].macd)*macdScale));
-   for(size_t index=0;index<=lastRecord-35;index++)
+   for(size_t index=0;index<=mLast-35;index++)
    {
       painter->lineTo(jm::Point(chartArea.left()+(index+35)*xScale,chartArea.center().y()-(macdData[index].macd)*macdScale));
    }
@@ -461,7 +403,7 @@ void TradingChart::paint(nui::Painter* painter)
    // Signal line
    painter->setStrokeColor(jm::Color::fromRgb(0, 200, 255));
    painter->moveTo(jm::Point(chartArea.left()+35*xScale,chartArea.center().y()-(macdData[0].signal)*macdScale));
-   for(size_t index=0;index<=lastRecord-35;index++)
+   for(size_t index=0;index<=mLast-35;index++)
    {
       painter->lineTo(jm::Point(chartArea.left()+(index+35)*xScale,chartArea.center().y()-(macdData[index].signal)*macdScale));
    }
