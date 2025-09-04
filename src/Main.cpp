@@ -6,7 +6,7 @@
 //  Copyright © 2025 Jameo Software. All rights reserved.
 //
 
-#include "Stocks.h"
+#include "Precompiled.hpp"
 
 
 int main(int argc, const char* argv[])
