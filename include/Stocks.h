@@ -136,17 +136,29 @@ class DllExport TradingChart: public nui::Canvas
       //! The last visible tick
       int64 mLast;
 
-      //! The visible span;
+      //! The visible span in ticks;
       int64 mSpan;
+
+      //! The xScale of the charts
+      double mXScale=1.0;
       
       //! Current curser position
       jm::Point mCursor;
+
+      //! Drag start position of mouse cursor
+      jm::Point mDragBegin;
+
+      //! Offsets of the view in pixel.
+      //! Offset of 0 means the latest price is most right in the screen
+      //! Positive offseat means moving the "paper" to the right
+      jm::Point mOffset;
 
       //! Area of the chart
       jm::Rect chartArea;
 
       //! Paints the chart
       void paint(nui::Painter* painter);
+
 
 };
 
